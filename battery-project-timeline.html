@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solid-State Battery Project Timeline</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Google Font (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for the Gantt chart */
+        .gantt-chart-container {
+            /* width: 100% is now handled by flex-grow */
+            overflow-x: auto; /* Allows horizontal scrolling if timeline is wide */
+            cursor: grab; /* Add grab cursor for panning */
+        }
+        .gantt-chart-container.is-panning {
+            cursor: grabbing; /* Show grabbing cursor when panning */
+        }
+        .gantt-svg {
+            font-size: 12px;
+            display: block;
+            /* min-width is now set dynamically by JS */
+        }
+        .gantt-bar {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            stroke-width: 1;
+            stroke: #333;
+        }
+        .gantt-bar:hover {
+            opacity: 0.8;
+            stroke-width: 2;
+        }
+        .grid-line {
+            stroke: #e5e7eb; /* gray-200 */
+            stroke-dasharray: 2 2;
+        }
+        .month-label {
+            fill: #6b7280; /* gray-500 */
+            font-weight: 500;
+        }
+        /* This class is no longer used, labels are HTML */
+        /*
+        .task-label {
+            fill: #1f2937;
+            font-weight: 500;
+        }
+        */
+        .gantt-label-header {
+            height: 50px; /* Matches HEADER_HEIGHT */
+            display: flex;
+            align-items: center;
+            padding-left: 1.5rem; /* p-6 */
+            padding-right: 1rem; /* p-4 */
+            font-weight: 700;
+            color: #374151; /* gray-700 */
+            border-bottom: 1px solid #e5e7eb; /* gray-200 */
+            border-right: 1px solid #e5e7eb;
+            background-color: #f9fafb; /* gray-50 */
+        }
+        .gantt-label-row {
+            height: 40px; /* Matches ROW_HEIGHT */
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 1rem; /* p-4 */
+            font-size: 12px;
+            font-weight: 500;
+            color: #1f2937; /* gray-800 */
+            border-bottom: 1px solid #e5e7eb; /* gray-200 */
+            border-right: 1px solid #e5e7eb;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            background-color: white;
+        }
+        .today-line {
+            stroke: #ef4444; /* red-500 */
+            stroke-width: 2;
+        }
+        #tooltip {
+            position: absolute;
+            display: none;
+            background: #1f2937; /* gray-800 */
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none; /* Prevents tooltip from blocking mouse events */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
+        <div class="p-6 border-b border-gray-200">
+            <h1 class="text-2xl font-bold text-gray-800">Solid-State Battery Project Timeline</h1>
+            <p class="mt-2 text-gray-600">A visual plan from research to college applications, including all competition deadlines.</p>
+        </div>
+
+        <!-- Legend -->
+        <div class="p-6 flex flex-wrap gap-4">
+            <div class="flex items-center">
+                <div class="w-4 h-4 rounded-sm bg-blue-500 mr-2"></div>
+                <span class="text-sm text-gray-700">Project Milestone</span>
+            </div>
+            <div class="flex items-center">
+                <div class="w-4 h-4 rounded-sm bg-green-500 mr-2"></div>
+                <span class="text-sm text-gray-700">Conference / Event</span>
+            </div>
+            <div class="flex items-center">
+                <div class="w-4 h-4 rounded-sm bg-red-500 mr-2"></div>
+                <span class="text-sm text-gray-700">Deadline</span>
+            </div>
+             <div class="flex items-center">
+                <div class="w-4 h-4 rounded-sm bg-purple-500 mr-2"></div>
+                <span class="text-sm text-gray-700">Submission Period</span>
+            </div>
+        </div>
+
+        <!-- Gantt Chart Container -->
+        <!-- New Flex Layout for frozen column -->
+        <div class="flex w-full border-t border-gray-200" id="gantt-wrapper">
+            <!-- Column 1: Frozen Labels -->
+            <div id="gantt-labels" class="flex-shrink-0">
+                <!-- JS will inject a header and all label divs here -->
+            </div>
+            
+            <!-- Column 2: Scrolling Chart -->
+            <div class="gantt-chart-container flex-grow">
+                <svg id="gantt-chart" class="gantt-svg"></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+
+    <script>
+        // --- DATA ---
+        // Note: JS Date months are 0-indexed (0=Jan, 9=Oct, 11=Dec)
+        const projectData = [
+            // Project Milestones
+            { id: 'proj-1', name: "Research & Development (Solid-State)", start: new Date(2025, 9, 1), end: new Date(2026, 1, 28), type: 'Project' },
+            { id: 'proj-2', name: "Research Paper Writing & Submission", start: new Date(2026, 2, 1), end: new Date(2026, 5, 30), type: 'Project' },
+            { id: 'proj-3', name: "Target: Journal Publication", start: new Date(2026, 9, 1), end: new Date(2026, 9, 31), type: 'Project' },
+            { id: 'proj-4', name: "College Application Season", start: new Date(2026, 9, 1), end: new Date(2026, 11, 31), type: 'Project' },
+            
+            // Competitions & Conferences (from PDF)
+            // Deadlines are now 14-day submission periods
+            { id: 'comp-1-sub', name: "Submission: 未来創造コンテスト", start: new Date(2025, 9, 13), end: new Date(2025, 9, 27), type: 'Submission' }, // Was Oct 27
+            { id: 'comp-2-sub', name: "Submission: ICNEA 2025 (Abstract)", start: new Date(2025, 9, 22), end: new Date(2025, 10, 5), type: 'Submission' }, // Was Nov 5
+            { id: 'comp-3-sub', name: "Submission: 中高生探求コンテスト", start: new Date(2025, 10, 1), end: new Date(2026, 0, 20), type: 'Submission' }, // Was already submission
+            { id: 'comp-2-reg-sub', name: "Submission: ICNEA 2025 (Registration)", start: new Date(2025, 10, 16), end: new Date(2025, 10, 30), type: 'Submission' }, // Was Nov 30
+            { id: 'comp-2-conf', name: "Conference: ICNEA 2025", start: new Date(2025, 11, 28), end: new Date(2025, 11, 30), type: 'Conference' },
+            { id: 'comp-4-sub', name: "Submission: つくばScience Edge", start: new Date(2025, 11, 27), end: new Date(2026, 0, 10), type: 'Submission' }, // Was Jan 10
+            { id: 'comp-5-sub', name: "Submission: 高校生国際シンポジウム", start: new Date(2025, 11, 27), end: new Date(2026, 0, 10), type: 'Submission' }, // Was Jan 10
+            // This is the final day, already covered by the submission period, but good to have as a hard stop.
+            // { id: 'comp-3-dl', name: "Deadline: 中高生探求コンテスト", start: new Date(2026, 0, 20), end: new Date(2026, 0, 20), type: 'Deadline' }, 
+            { id: 'comp-5-conf', name: "Conference: 高校生国際シンポジウム", start: new Date(2026, 1, 18), end: new Date(2026, 1, 19), type: 'Conference' },
+            { id: 'comp-1-conf', name: "Conference: 未来創造コンテスト", start: new Date(2026, 2, 12), end: new Date(2026, 2, 14), type: 'Conference' },
+            { id: 'comp-6-conf', name: "Conference: 電気化学会第93回大会", start: new Date(2026, 2, 17), end: new Date(2026, 2, 19), type: 'Conference' },
+            { id: 'comp-6-sub', name: "Submission: 電気化学会第93回大会", start: new Date(2026, 2, 3), end: new Date(2026, 2, 17), type: 'Submission' }, // Was Mar 17
+            { id: 'comp-4-conf', name: "Conference: つくばScience Edge", start: new Date(2026, 2, 27), end: new Date(2026, 2, 28), type: 'Conference' },
+        ];
+
+        // --- CHART SETTINGS ---
+        const CHART_START_DATE = new Date(2025, 9, 1); // Oct 1, 2025
+        const CHART_END_DATE = new Date(2026, 11, 31); // Dec 31, 2026
+        const ROW_HEIGHT = 40;
+        const HEADER_HEIGHT = 50;
+        const TASK_LABEL_WIDTH = 250;
+        const SVG_PADDING = 20;
+
+        const taskColors = {
+            'Project': 'fill-blue-500',
+            'Conference': 'fill-green-500',
+            'Deadline': 'fill-red-500',
+            'Submission': 'fill-purple-500'
+        };
+
+        let currentZoom = 1.0; // Tracks the zoom level
+        let lastCalculatedChartWidth = 1200; // Store last width for zoom-to-cursor
+        let isPanning = false;
+        let startX, scrollLeftStart;
+
+        // --- UTILITY FUNCTIONS ---
+        function getDaysBetween(startDate, endDate) {
+            const msPerDay = 1000 * 60 * 60 * 24;
+            return (endDate - startDate) / msPerDay;
+        }
+        
+        // Format Date to YYYY-MM-DD
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        // --- RENDER FUNCTION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            drawGanttChart();
+            window.addEventListener('resize', () => {
+                // On resize, reset zoom to 1 to recalculate base layout
+                currentZoom = 1.0;
+                drawGanttChart(); 
+            });
+
+            // Add zoom functionality
+            const ganttWrapper = document.getElementById('gantt-wrapper');
+            const svgContainer = document.querySelector('.gantt-chart-container');
+            const labelsContainer = document.getElementById('gantt-labels');
+
+            ganttWrapper.addEventListener('wheel', (e) => {
+                e.preventDefault(); // Prevent page scroll
+                
+                const svgRect = svgContainer.getBoundingClientRect();
+                const scrollLeft_before = svgContainer.scrollLeft;
+                
+                let cursorX_relative;
+                let world_fraction;
+
+                if (e.clientX >= svgRect.left) {
+                    // --- Cursor is over the SVG chart area ---
+                    cursorX_relative = e.clientX - svgRect.left; // Cursor X relative to container
+                    const cursorX_world = scrollLeft_before + cursorX_relative; // Cursor X in chart "world" coords
+                    world_fraction = cursorX_world / lastCalculatedChartWidth;
+                } else {
+                    // --- Cursor is over the Labels area ---
+                    // Zoom to the center of the visible SVG container
+                    cursorX_relative = svgContainer.clientWidth / 2;
+                    const cursorX_world = scrollLeft_before + cursorX_relative;
+                    world_fraction = cursorX_world / lastCalculatedChartWidth;
+                }
+                
+                // --- Calculate new zoom ---
+                const zoomIntensity = 0.1;
+                // e.deltaY < 0 means zooming in (pinching out or scrolling up)
+                const direction = e.deltaY < 0 ? 1 : -1;
+                
+                currentZoom += direction * zoomIntensity;
+                currentZoom = Math.max(1.0, currentZoom); // Don't zoom out smaller than 100% (1.0)
+                
+                // --- Redraw and adjust scroll ---
+                drawGanttChart(); // Redraws and updates lastCalculatedChartWidth
+
+                // Calculate new world position and adjust scroll to keep cursor in place
+                const new_cursorX_world = world_fraction * lastCalculatedChartWidth;
+                svgContainer.scrollLeft = new_cursorX_world - cursorX_relative;
+
+            }, { passive: false }); // 'passive: false' is needed for preventDefault
+
+            /* // REMOVED: Replaced with the new listener on 'ganttWrapper'
+            svgContainer.addEventListener('wheel', (e) => {
+                e.preventDefault(); // Prevent page scroll
+            ...
+            }, { passive: false }); // 'passive: false' is needed for preventDefault
+            */
+
+            // --- Add Panning Functionality ---
+            svgContainer.addEventListener('mousedown', (e) => {
+                isPanning = true;
+                svgContainer.classList.add('is-panning');
+                startX = e.pageX - svgContainer.offsetLeft;
+                scrollLeftStart = svgContainer.scrollLeft;
+            });
+
+            // Attach mouseup and mousemove to the window for robust panning
+            window.addEventListener('mouseup', () => {
+                isPanning = false;
+                svgContainer.classList.remove('is-panning');
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isPanning) return;
+                // e.preventDefault(); // Prevent text selection while dragging
+                // We must recalculate x relative to the container *inside* the mousemove
+                const x = e.pageX - svgContainer.offsetLeft;
+                const walk = (x - startX) * 2; // The '2' is a pan-speed multiplier, adjust as needed
+                svgContainer.scrollLeft = scrollLeftStart - walk;
+            });
+
+            /* // REMOVED these listeners from svgContainer, as they are now on 'window'
+            svgContainer.addEventListener('mouseleave', () => {
+                isPanning = false;
+                svgContainer.classList.remove('is-panning');
+            });
+
+            svgContainer.addEventListener('mouseup', () => {
+                isPanning = false;
+                svgContainer.classList.remove('is-panning');
+            });
+
+            svgContainer.addEventListener('mousemove', (e) => {
+                if (!isPanning) return;
+                e.preventDefault(); // Prevent text selection while dragging
+                const x = e.pageX - svgContainer.offsetLeft;
+                const walk = (x - startX) * 2; // The '2' is a pan-speed multiplier, adjust as needed
+                svgContainer.scrollLeft = scrollLeftStart - walk;
+            });
+            */
+        });
+
+        function drawGanttChart() {
+            const svg = document.getElementById('gantt-chart');
+            const tooltip = document.getElementById('tooltip');
+            const labelsContainer = document.getElementById('gantt-labels');
+            const svgContainer = document.querySelector('.gantt-chart-container');
+            
+            // Clear previous render
+            svg.innerHTML = '';
+            labelsContainer.innerHTML = '';
+
+            // Set label container width
+            labelsContainer.style.width = `${TASK_LABEL_WIDTH}px`;
+
+            // Calculate chart dimensions
+            const totalDays = getDaysBetween(CHART_START_DATE, CHART_END_DATE);
+            const chartHeight = (projectData.length * ROW_HEIGHT) + HEADER_HEIGHT + SVG_PADDING;
+            
+            // Get container width for responsiveness (this is now the scrolling part)
+            const chartAreaWidth = svgContainer.clientWidth;
+            
+            // Apply zoom level to the width calculation
+            const baseChartWidth = Math.max(chartAreaWidth, 1200 - TASK_LABEL_WIDTH); // 1200 was old total min-width
+            const chartWidth = baseChartWidth * currentZoom;
+            const dayWidth = chartWidth / totalDays;
+            
+            // Store this for the zoom-to-cursor calculation
+            lastCalculatedChartWidth = chartWidth;
+
+            // Override the min-width style from CSS to allow dynamic resizing
+            svg.style.minWidth = `${chartWidth}px`;
+
+            svg.setAttribute('viewBox', `0 0 ${chartWidth} ${chartHeight}`);
+            svg.style.height = `${chartHeight}px`;
+
+            // --- Draw Header (Months) ---
+            const monthsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            monthsGroup.setAttribute('transform', `translate(0, 0)`); // No more X offset
+            svg.appendChild(monthsGroup);
+
+            // --- Draw Label Header (HTML) ---
+            const labelHeader = document.createElement('div');
+            labelHeader.className = 'gantt-label-header';
+            labelHeader.style.height = `${HEADER_HEIGHT}px`;
+            labelHeader.textContent = 'Tasks';
+            labelsContainer.appendChild(labelHeader);
+
+
+            let currentMonth = new Date(CHART_START_DATE.getFullYear(), CHART_START_DATE.getMonth(), 1);
+            while (currentMonth <= CHART_END_DATE) {
+                const monthStartX = getDaysBetween(CHART_START_DATE, currentMonth) * dayWidth;
+                
+                // Month Label
+                const monthLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                monthLabel.setAttribute('x', monthStartX + 5);
+                monthLabel.setAttribute('y', HEADER_HEIGHT / 2);
+                monthLabel.setAttribute('class', 'month-label');
+                monthLabel.textContent = `${currentMonth.toLocaleString('default', { month: 'short' })} '${currentMonth.getFullYear().toString().slice(-2)}`;
+                monthsGroup.appendChild(monthLabel);
+                
+                // Vertical Grid Line
+                const gridLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                gridLine.setAttribute('x1', monthStartX);
+                gridLine.setAttribute('x2', monthStartX);
+                gridLine.setAttribute('y1', HEADER_HEIGHT - 10);
+                gridLine.setAttribute('y2', chartHeight - SVG_PADDING);
+                gridLine.setAttribute('class', 'grid-line');
+                monthsGroup.appendChild(gridLine);
+
+                // Move to next month
+                currentMonth.setMonth(currentMonth.getMonth() + 1);
+            }
+
+            // --- Draw Tasks ---
+            const tasksGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            tasksGroup.setAttribute('transform', `translate(0, ${HEADER_HEIGHT})`);
+            svg.appendChild(tasksGroup);
+
+            projectData.forEach((task, index) => {
+                const y = index * ROW_HEIGHT;
+
+                // Task Label (HTML)
+                const labelEl = document.createElement('div');
+                labelEl.className = 'gantt-label-row';
+                labelEl.style.height = `${ROW_HEIGHT}px`;
+                labelEl.textContent = task.name;
+                labelEl.title = task.name; // Add a native tooltip for truncated names
+                labelsContainer.appendChild(labelEl);
+
+                // Task Bar (SVG)
+                const taskStartX = getDaysBetween(CHART_START_DATE, task.start) * dayWidth;
+                let taskWidth = (getDaysBetween(task.start, task.end) + 1) * dayWidth;
+                
+                // Ensure deadlines (1-day events) have a visible width
+                if (taskWidth < 3) {
+                    taskWidth = 3;
+                }
+
+                const taskBar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                taskBar.setAttribute('x', taskStartX); // No more TASK_LABEL_WIDTH offset
+                taskBar.setAttribute('y', y + 5);
+                taskBar.setAttribute('width', taskWidth);
+                taskBar.setAttribute('height', ROW_HEIGHT - 10);
+                taskBar.setAttribute('rx', 4); // Rounded corners
+                taskBar.setAttribute('ry', 4);
+                taskBar.setAttribute('class', `gantt-bar ${taskColors[task.type] || 'fill-gray-400'}`);
+                tasksGroup.appendChild(taskBar);
+                
+                // --- Tooltip Events ---
+                taskBar.addEventListener('mouseover', (e) => {
+                    let duration = `${formatDate(task.start)}`;
+                    if (formatDate(task.start) !== formatDate(task.end)) {
+                        duration += ` to ${formatDate(task.end)}`;
+                    }
+                    
+                    tooltip.innerHTML = `<strong>${task.name}</strong><br>${duration}`;
+                    tooltip.style.display = 'block';
+                });
+                
+                taskBar.addEventListener('mousemove', (e) => {
+                    // Use pageX/pageY so the tooltip moves correctly with page scroll
+                    tooltip.style.left = `${e.pageX + 20}px`;
+                    tooltip.style.top = `${e.pageY + 20}px`;
+                });
+
+                taskBar.addEventListener('mouseout', () => {
+                    tooltip.style.display = 'none';
+                });
+            });
+
+            // --- Draw Today Line ---
+            const today = new Date();
+            if (today >= CHART_START_DATE && today <= CHART_END_DATE) {
+                const todayX = getDaysBetween(CHART_START_DATE, today) * dayWidth;
+                const todayLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                todayLine.setAttribute('x1', todayX); // No offset
+                todayLine.setAttribute('x2', todayX); // No offset
+                todayLine.setAttribute('y1', HEADER_HEIGHT - 10);
+                todayLine.setAttribute('y2', chartHeight - SVG_PADDING);
+                todayLine.setAttribute('class', 'today-line');
+                svg.appendChild(todayLine);
+
+                const todayLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                todayLabel.setAttribute('x', todayX + 5); // No offset
+                todayLabel.setAttribute('y', HEADER_HEIGHT - 15);
+                todayLabel.setAttribute('fill', '#ef4444');
+                todayLabel.setAttribute('font-weight', 'bold');
+                todayLabel.textContent = 'Today';
+                svg.appendChild(todayLabel);
+            }
+        }
+    </script>
+
+</body>
+</html>
+
+
+
+
+
+
